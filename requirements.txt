@@ -1,7 +1,9 @@
 streamlit==1.39.0
-pandas==2.2.3
+pandas==2.2.2
 numpy==1.26.4
 matplotlib==3.9.2
 openpyxl==3.1.5
-st-aggrid==0.3.4.post3
+st-aggrid==0.3.3
+rich<14
+
 
