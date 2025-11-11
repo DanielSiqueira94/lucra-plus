@@ -6,14 +6,7 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-senha_correta = "lucra123"
-
-senha = st.text_input("Digite a senha para acessar o app:", type="password")
-
-if senha != senha_correta:
-    st.error("Acesso restrito. App temporariamente em manutenção.")
-    st.stop()
-# ----------------------------
+----------------
 # CONFIGURAÇÃO DO APP
 # ----------------------------
 st.set_page_config(
@@ -21,6 +14,14 @@ st.set_page_config(
     page_icon="💰",
     layout="wide"
 )
+
+senha_correta = "lucra1234"
+
+senha = st.text_input("Digite a senha para acessar o app:", type="password")
+
+if senha != senha_correta:
+    st.error("Acesso restrito. App temporariamente em manutenção.")
+    st.stop()
 
 # ----------------------------
 # FUNÇÕES DE CÁLCULO
@@ -239,4 +240,5 @@ elif menu == "ℹ️ Sobre":
     """)
 
     st.caption("Versão 0.6 — by Daniel Siqueira, 2025")
+
 
