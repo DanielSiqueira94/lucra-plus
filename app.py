@@ -147,9 +147,9 @@ custos_fixos = st.sidebar.number_input("Custos fixos mensais (R$)", 0.0, 1_000_0
 incluir_fixos = st.sidebar.checkbox("Incluir custos fixos nos cálculos unitários", value=False)
 menu = st.sidebar.radio("📋 Navegação", ["📥 Importar / Adicionar", "📊 Resultados", "💾 Exportar", "ℹ️ Sobre"])
 
-# ----------------------------
+# -----------------------------
 # RESULTADOS
-# ----------------------------
+# -----------------------------
 if menu == "📊 Resultados":
     st.title("📊 Resultados e análises")
 
@@ -345,3 +345,4 @@ elif menu == "ℹ️ Sobre":
     🏷️ **Versão:** 0.21  
     📅 **Última atualização:** Novembro/2025  
     """)
+
