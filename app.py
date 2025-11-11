@@ -6,7 +6,6 @@ import io
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 # ----------------------------
 # CONFIGURAÇÃO DO APP
@@ -72,8 +71,8 @@ def calcular_resultados(df_input, margem_desejada, custos_fixos, incluir_fixos=F
 
         df["Lucro Líquido (com fixos) (R$)"] = df["Lucro Líquido (R$)"] - df["Custo Fixo Rateado (R$)"]
         df["Margem Líquida (%)"] = np.where(
-            df["Preco"] != 0, 
-            (df["Lucro Líquido (com fixos) (R$)"] / df["Preco"]) * 100, 
+            df["Preco"] != 0,
+            (df["Lucro Líquido (com fixos) (R$)"] / df["Preco"]) * 100,
             0
         )
         df["Preço Ideal c/ Fixos (R$)"] = np.where(
@@ -146,7 +145,6 @@ if menu == "📊 Resultados":
         df_com = calcular_resultados(df_base, margem_desejada, custos_fixos, incluir_fixos=True)
         df_full = df_com if incluir_fixos else df_sem
 
-        # --- Big numbers acima (placeholders)
         lucro_col = "Lucro Líquido (com fixos) (R$)" if incluir_fixos and "Lucro Líquido (com fixos) (R$)" in df_full.columns else "Lucro Líquido (R$)"
         margem_col = "Margem Líquida (%)" if incluir_fixos and "Margem Líquida (%)" in df_full.columns else "Margem Atual (%)"
 
@@ -155,60 +153,19 @@ if menu == "📊 Resultados":
         place_margem = ph2.empty()
         place_prod = ph3.empty()
 
-        # valores totais iniciais
-        lucro_total_total = pd.to_numeric(df_full[lucro_col], errors="coerce").sum(min_count=1)
-        margem_media_total = pd.to_numeric(df_full[margem_col], errors="coerce").mean()
-        total_produtos_total = len(df_full)
-
-        place_lucro.metric("💰 Lucro Total", f"R$ {0.0 if pd.isna(lucro_total_total) else lucro_total_total:.2f}")
-        place_margem.metric("📉 Margem Média", f"{0.0 if pd.isna(margem_media_total) else margem_media_total:.2f}%")
-        place_prod.metric("📦 Produtos", total_produtos_total)
-
-        st.markdown("---")
-        st.subheader("📈 Detalhamento por produto (clique para selecionar)")
-
-        # --- AgGrid Config
-        gb = GridOptionsBuilder.from_dataframe(df_full)
-        gb.configure_selection(selection_mode="multiple", use_checkbox=True)
-        gb.configure_pagination(enabled=True, paginationAutoPageSize=False, paginationPageSize=10)
-        gb.configure_default_column(resizable=True, sortable=True, filter=True, minWidth=160)
-        gridOptions = gb.build()
-
-        grid_response = AgGrid(
-            df_full,
-            gridOptions=gridOptions,
-            update_mode=GridUpdateMode.SELECTION_CHANGED,
-            fit_columns_on_grid_load=True,
-            height=420,
-            theme="alpine",
+        st.markdown("### 🔍 Filtrar produtos")
+        filtro_produto = st.multiselect(
+            "Selecione produtos para análise:",
+            options=df_full["Produto"].unique(),
+            default=[]
         )
 
-        selected_raw = grid_response.get("selected_rows", [])
-        if selected_raw is None:
-            selected_records = []
-        elif isinstance(selected_raw, pd.DataFrame):
-            selected_records = selected_raw.to_dict("records")
-        elif isinstance(selected_raw, dict):
-            selected_records = [selected_raw]
-        elif isinstance(selected_raw, list):
-            selected_records = selected_raw
-        else:
-            try:
-                selected_records = list(selected_raw)
-            except Exception:
-                selected_records = []
-
-        if len(selected_records) > 0:
-            df = pd.DataFrame(selected_records)
-            for c in df.columns:
-                if c != "Produto":
-                    df[c] = pd.to_numeric(df[c], errors="coerce")
-            selecionados = df["Produto"].astype(str).tolist()
-            st.success(f"🔍 Filtro ativo: {', '.join(selecionados)}")
+        if filtro_produto:
+            df = df_full[df_full["Produto"].isin(filtro_produto)]
+            st.success(f"Filtro ativo: {', '.join(filtro_produto)}")
         else:
             df = df_full.copy()
 
-        # --- Atualiza big numbers com filtro
         lucro_total = pd.to_numeric(df[lucro_col], errors="coerce").sum(min_count=1)
         margem_media = pd.to_numeric(df[margem_col], errors="coerce").mean()
         total_produtos = len(df)
@@ -218,13 +175,37 @@ if menu == "📊 Resultados":
         place_prod.metric("📦 Produtos", total_produtos)
 
         st.markdown("---")
-        st.markdown("### Gráfico de Margem por Produto")
+        st.markdown("### 📋 Tabela de produtos")
 
-        fig, ax = plt.subplots(figsize=(8, max(3, 0.25 * len(df))))
-        ax.barh(df["Produto"], df[margem_col], color=["green" if x >= margem_desejada else "red" for x in df[margem_col]])
-        ax.set_xlabel(margem_col)
-        ax.grid(axis="x", linestyle="--", alpha=0.5)
-        st.pyplot(fig)
+        st.data_editor(
+            df,
+            use_container_width=True,
+            height=420,
+            hide_index=True,
+            key="tabela_produtos",
+            column_config={
+                "Produto": st.column_config.TextColumn("Produto", required=True),
+                "Preco": st.column_config.NumberColumn("Preço (R$)", format="%.2f"),
+                "Custo": st.column_config.NumberColumn("Custo (R$)", format="%.2f"),
+            },
+        )
+
+        st.markdown("---")
+        st.markdown("### 📈 Gráfico de Margem por Produto")
+
+        if df.empty:
+            st.warning("Nenhum produto disponível para o gráfico.")
+        else:
+            fig, ax = plt.subplots(figsize=(8, max(3, 0.25 * len(df))))
+            ax.barh(
+                df["Produto"],
+                df[margem_col],
+                color=["green" if x >= margem_desejada else "red" for x in df[margem_col]]
+            )
+            ax.set_xlabel(margem_col)
+            ax.set_ylabel("Produto")
+            ax.grid(axis="x", linestyle="--", alpha=0.5)
+            st.pyplot(fig)
 
 # ----------------------------
 # IMPORTAR / ADICIONAR
@@ -271,9 +252,52 @@ elif menu == "💾 Exportar":
 # ----------------------------
 # SOBRE
 # ----------------------------
+# ----------------------------
+# SOBRE
+# ----------------------------
 elif menu == "ℹ️ Sobre":
-    st.title("ℹ️ Sobre o Lucra+")
+    st.title("💰 Sobre o Lucra+")
+
     st.markdown("""
-    **Lucra+ v0.19**  
-    💡 Com filtro dinâmico e big numbers atualizando em tempo real acima da tabela.
+    ### 💼 **Lucra+ v0.21**
+    O **Lucra+** é uma aplicação desenvolvida para ajudar **empreendedores e gestores** 
+    a entender e otimizar a **margem de lucro dos seus produtos**, com base em custos,
+    taxas e metas de rentabilidade.
+
+    ---
+    #### ⚙️ **Como o Lucra+ funciona**
+    1. Você importa ou cadastra seus produtos com preço, custo e taxas.  
+    2. O sistema calcula automaticamente:
+       - Lucro líquido (com e sem custos fixos)  
+       - Margem atual e ideal  
+       - Preço ideal para atingir a margem desejada  
+       - Ponto de equilíbrio  
+    3. Você visualiza os resultados em tabelas, gráficos e indicadores dinâmicos.
+
+    ---
+    #### 🚀 **Principais recursos**
+    - Upload de planilhas Excel (.xlsx / .xls)  
+    - Adição manual de produtos  
+    - Cálculos automáticos de lucro e margem  
+    - Filtro de produtos com atualização imediata  
+    - Exportação dos resultados para Excel  
+    - Gráfico visual de desempenho por produto  
+
+    ---
+    #### 🧩 **Tecnologias utilizadas**
+    - [Streamlit](https://streamlit.io) – Interface interativa e responsiva  
+    - [Pandas](https://pandas.pydata.org) – Processamento de dados  
+    - [Matplotlib](https://matplotlib.org) – Geração de gráficos  
+    - [OpenPyXL](https://openpyxl.readthedocs.io) – Criação e leitura de planilhas Excel  
+
+    ---
+    #### 💬 **Agradecimento**
+    Este projeto foi criado com o objetivo de **tornar o controle de margens simples e acessível**.  
+    Caso tenha sugestões de melhorias ou novas funcionalidades, fique à vontade para compartilhar!
+
+    ---
+    🏷️ **Versão:** 0.21  
+    📅 **Última atualização:** Novembro/2025  
     """)
+
+
