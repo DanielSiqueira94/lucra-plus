@@ -196,6 +196,7 @@ if menu == "📊 Resultados":
             fit_columns_on_grid_load=True,
             height=420,
             theme="alpine",
+            enable_enterprise_modules=False
         )
 
         selected_raw = grid_response.get("selected_rows", [])
@@ -306,3 +307,4 @@ elif menu == "ℹ️ Sobre":
     **Lucra+ v0.19**  
     💡 Com filtro dinâmico e big numbers atualizando em tempo real acima da tabela.
     """)
+
