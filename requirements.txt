@@ -1,10 +1,14 @@
 streamlit==1.39.0
 pandas==2.2.3
 numpy==2.1.3
-matplotlib==3.9.2
 openpyxl==3.1.5
-git+https://github.com/andfanilo/streamlit-aggrid.git@main
-rich<14
+matplotlib==3.9.2
+python-decouple==3.8
+requests==2.32.3
+gitpython==3.1.45
+pyarrow==22.0.0
+git+https://github.com/PablocFonseca/streamlit-aggrid.git@557ef9255e10b35e2231cbde31e25d68264f0c74
+
 
 
 
