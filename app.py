@@ -6,7 +6,7 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-----------------
+# ----------------------------
 # CONFIGURAÇÃO DO APP
 # ----------------------------
 st.set_page_config(
@@ -15,7 +15,10 @@ st.set_page_config(
     layout="wide"
 )
 
-senha_correta = "lucra1234"
+# ----------------------------
+# BLOQUEIO POR SENHA
+# ----------------------------
+senha_correta = "lucra1235"
 
 senha = st.text_input("Digite a senha para acessar o app:", type="password")
 
@@ -216,8 +219,11 @@ elif menu == "💾 Exportar":
         excel_data = exportar_excel(df)
 
         st.success("✅ Resultados prontos para exportação.")
-        st.download_button("📊 Baixar Excel (.xlsx)", data=excel_data,
-                           file_name=f"Lucra_Resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        st.download_button(
+            "📊 Baixar Excel (.xlsx)",
+            data=excel_data,
+            file_name=f"Lucra_Resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
 
 # ----------------------------
 # PÁGINA: SOBRE
@@ -240,5 +246,3 @@ elif menu == "ℹ️ Sobre":
     """)
 
     st.caption("Versão 0.6 — by Daniel Siqueira, 2025")
-
-
