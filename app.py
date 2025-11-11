@@ -18,13 +18,23 @@ st.set_page_config(
 # ----------------------------
 # BLOQUEIO POR SENHA
 # ----------------------------
-senha_correta = "lucra1235"
 
-senha = st.text_input("Digite a senha para acessar o app:", type="password")
+senha_correta = "lucra12345"
 
-if senha != senha_correta:
-    st.error("Acesso restrito. App temporariamente em manutenção.")
+# Inicializa o estado de login
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+# Se ainda não estiver autenticado, mostra o campo de senha
+if not st.session_state.autenticado:
+    senha = st.text_input("🔒 Digite a senha para acessar o app:", type="password")
+    if senha == senha_correta:
+        st.session_state.autenticado = True
+        st.experimental_rerun()  # recarrega a página e esconde o campo
+    elif senha:
+        st.error("Senha incorreta. Tente novamente.")
     st.stop()
+
 
 # ----------------------------
 # FUNÇÕES DE CÁLCULO
