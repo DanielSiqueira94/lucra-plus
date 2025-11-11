@@ -1,10 +1,12 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import io
 from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 # ----------------------------
 # CONFIGURAÇÃO DO APP
@@ -18,243 +20,260 @@ st.set_page_config(
 # ----------------------------
 # BLOQUEIO POR SENHA
 # ----------------------------
-
 senha_correta = "lucra12345"
-
-# Inicializa o estado de login
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
-# Se ainda não estiver autenticado, mostra o campo de senha
 if not st.session_state.autenticado:
     senha = st.text_input("🔒 Digite a senha para acessar o app:", type="password")
     if senha == senha_correta:
         st.session_state.autenticado = True
-        st.rerun()  # recarrega a página e esconde o campo    
-        
-        
+        st.rerun()
     elif senha:
         st.error("Senha incorreta. Tente novamente.")
     st.stop()
 
+# ----------------------------
+# FUNÇÃO DE CÁLCULO
+# ----------------------------
+def calcular_resultados(df_input, margem_desejada, custos_fixos, incluir_fixos=False):
+    df = df_input.copy()
+    df = df.rename(columns={
+        "Taxa_pct": "Taxa (%)",
+        "OutrosCustos": "Outros Custos (R$)"
+    })
 
-# ----------------------------
-# FUNÇÕES DE CÁLCULO
-# ----------------------------
-def calcular_resultados(df, margem_desejada, custos_fixos):
-    df = df.copy()
-    for col in ["Taxa_pct", "OutrosCustos"]:
+    for col in ["Taxa (%)", "Outros Custos (R$)"]:
         if col not in df.columns:
             df[col] = 0.0
 
-    df["Custo"] = pd.to_numeric(df["Custo"], errors="coerce").fillna(0)
-    df["Preco"] = pd.to_numeric(df["Preco"], errors="coerce").fillna(0)
-    df["Taxa_pct"] = pd.to_numeric(df["Taxa_pct"], errors="coerce").fillna(0)
-    df["OutrosCustos"] = pd.to_numeric(df["OutrosCustos"], errors="coerce").fillna(0)
+    df["Custo"] = pd.to_numeric(df["Custo"], errors="coerce").fillna(0.0)
+    df["Preco"] = pd.to_numeric(df["Preco"], errors="coerce").fillna(0.0)
+    df["Taxa (%)"] = pd.to_numeric(df["Taxa (%)"], errors="coerce").fillna(0.0)
+    df["Outros Custos (R$)"] = pd.to_numeric(df["Outros Custos (R$)"], errors="coerce").fillna(0.0)
 
-    df["Taxa_R$"] = (df["Preco"] * df["Taxa_pct"]) / 100
-    df["Lucro_Líquido (R$)"] = df["Preco"] - df["Custo"] - df["Taxa_R$"] - df["OutrosCustos"]
-    df["Margem (%)"] = (df["Lucro_Líquido (R$)"] / df["Preco"]).replace([float("inf"), -float("inf")], 0).fillna(0) * 100
-
+    t = df["Taxa (%)"] / 100
     m = margem_desejada / 100
-    df["Preço Ideal (R$)"] = (df["Custo"] + df["OutrosCustos"]) / (1 - m) if (1 - m) > 0 else df["Preco"]
 
-    df["Ponto de Equilíbrio (unid)"] = df.apply(
-        lambda r: custos_fixos / r["Lucro_Líquido (R$)"] if r["Lucro_Líquido (R$)"] > 0 else None, axis=1
-    )
+    df["Taxa (R$)"] = df["Preco"] * t
+    df["Lucro Líquido (R$)"] = df["Preco"] - df["Custo"] - df["Taxa (R$)"] - df["Outros Custos (R$)"]
+    df["Margem Atual (%)"] = np.where(df["Preco"] != 0, (df["Lucro Líquido (R$)"] / df["Preco"]) * 100, 0)
+    df["Margem Desejada (%)"] = margem_desejada
+    df["Preço Ideal (R$)"] = np.where(1 - t - m > 0, (df["Custo"] + df["Outros Custos (R$)"]) / (1 - t - m), np.nan)
+    df["Diferença Preço Ideal (%)"] = np.where(df["Preco"] != 0, ((df["Preço Ideal (R$)"] - df["Preco"]) / df["Preco"]) * 100, np.nan)
+    df["Ponto de Equilíbrio (unid)"] = np.where(df["Lucro Líquido (R$)"] > 0, custos_fixos / df["Lucro Líquido (R$)"], np.nan)
 
-    df = df.round(2)
-    return df
+    if incluir_fixos:
+        total_receita = df["Preco"].sum()
+        if total_receita == 0:
+            df["Custo Fixo Rateado (R$)"] = custos_fixos / max(len(df), 1)
+        else:
+            df["Custo Fixo Rateado (R$)"] = (df["Preco"] / total_receita) * custos_fixos
 
+        df["Lucro Líquido (com fixos) (R$)"] = df["Lucro Líquido (R$)"] - df["Custo Fixo Rateado (R$)"]
+        df["Margem Líquida (%)"] = np.where(
+            df["Preco"] != 0, 
+            (df["Lucro Líquido (com fixos) (R$)"] / df["Preco"]) * 100, 
+            0
+        )
+        df["Preço Ideal c/ Fixos (R$)"] = np.where(
+            1 - t - m > 0,
+            (df["Custo"] + df["Outros Custos (R$)"] + df["Custo Fixo Rateado (R$)"]) / (1 - t - m),
+            np.nan
+        )
+        df["Diferença Preço Ideal c/ Fixos (%)"] = np.where(
+            df["Preco"] != 0,
+            ((df["Preço Ideal c/ Fixos (R$)"] - df["Preco"]) / df["Preco"]) * 100,
+            np.nan
+        )
 
-def exportar_excel(df):
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Lucra+ Resultados")
-    return buffer.getvalue()
-
+    return df.round(2)
 
 # ----------------------------
-# FUNÇÃO PARA GERAR MODELO EXCEL
+# EXPORTAÇÃO
+# ----------------------------
+def exportar_excel(df_sem, df_com=None):
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df_sem.to_excel(writer, index=False, sheet_name="Resultados_Sem_Fixos")
+        if df_com is not None:
+            df_com.to_excel(writer, index=False, sheet_name="Resultados_Com_Fixos")
+    return buffer.getvalue()
+
+# ----------------------------
+# MODELO EXCEL
 # ----------------------------
 def gerar_modelo_excel():
     wb = Workbook()
     ws = wb.active
     ws.title = "Modelo Lucra+"
-
-    # Cabeçalhos
-    ws.append(["Produto", "Custo", "Preco", "Taxa_pct", "OutrosCustos"])
+    ws.append(["Produto", "Custo", "Preco", "Taxa (%)", "Outros Custos (R$)"])
     ws.append(["Camiseta Azul", 25.0, 50.0, 2.5, 0.0])
     ws.append(["Caneca Logo", 18.0, 35.0, 3.0, 0.0])
     ws.append(["Bolo Pequeno", 12.0, 30.0, 5.0, 1.5])
-
-    # Estilo do cabeçalho
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="4F81BD")
     for cell in ws[1]:
         cell.font = header_font
         cell.fill = header_fill
-
-    # Ajuste automático da largura das colunas
     for col in ws.columns:
-        max_len = max(len(str(cell.value)) for cell in col if cell.value)
+        max_len = max(len(str(c.value)) for c in col if c.value)
         ws.column_dimensions[col[0].column_letter].width = max_len + 2
-
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
 
 # ----------------------------
-# ESTADO DE SESSÃO
-# ----------------------------
-if "dados" not in st.session_state:
-    st.session_state.dados = pd.DataFrame(columns=["Produto", "Custo", "Preco", "Taxa_pct", "OutrosCustos"])
-
-# ----------------------------
-# SIDEBAR - CONFIGURAÇÕES
+# SIDEBAR CONFIG
 # ----------------------------
 st.sidebar.title("⚙️ Configurações")
-margem_desejada = st.sidebar.number_input("Margem desejada (%)", 0.0, 99.0, 30.0, step=1.0)
-custos_fixos = st.sidebar.number_input("Custos fixos mensais (R$)", 0.0, 100000.0, 0.0, step=100.0)
-st.sidebar.markdown("---")
-
+margem_desejada = st.sidebar.number_input("Margem desejada (%)", 0.0, 99.0, 30.0)
+custos_fixos = st.sidebar.number_input("Custos fixos mensais (R$)", 0.0, 1_000_000.0, 0.0, step=100.0)
+incluir_fixos = st.sidebar.checkbox("Incluir custos fixos nos cálculos unitários", value=False)
 menu = st.sidebar.radio("📋 Navegação", ["📥 Importar / Adicionar", "📊 Resultados", "💾 Exportar", "ℹ️ Sobre"])
 
 # ----------------------------
-# PÁGINA: IMPORTAR / ADICIONAR
+# RESULTADOS
 # ----------------------------
-if menu == "📥 Importar / Adicionar":
-    st.title("📥 Importar produtos ou adicionar manualmente")
+if menu == "📊 Resultados":
+    st.title("📊 Resultados e análises")
 
-    col1, col2 = st.columns(2)
+    if "dados" not in st.session_state or st.session_state.dados.empty:
+        st.info("Nenhum produto cadastrado.")
+    else:
+        df_base = st.session_state.dados
+        df_sem = calcular_resultados(df_base, margem_desejada, custos_fixos, incluir_fixos=False)
+        df_com = calcular_resultados(df_base, margem_desejada, custos_fixos, incluir_fixos=True)
+        df_full = df_com if incluir_fixos else df_sem
 
-    # UPLOAD DE PLANILHA
-    with col1:
-        st.subheader("⬆️ Upload de Planilha Excel")
-        st.caption("Use colunas: Produto, Custo, Preco, Taxa_pct, OutrosCustos")
+        # --- Big numbers acima (placeholders)
+        lucro_col = "Lucro Líquido (com fixos) (R$)" if incluir_fixos and "Lucro Líquido (com fixos) (R$)" in df_full.columns else "Lucro Líquido (R$)"
+        margem_col = "Margem Líquida (%)" if incluir_fixos and "Margem Líquida (%)" in df_full.columns else "Margem Atual (%)"
 
-        arquivo = st.file_uploader("Selecione o arquivo Excel (.xlsx ou .xls)", type=["xlsx", "xls"])
-        if arquivo:
-            try:
-                df = pd.read_excel(arquivo)
-                colunas_necessarias = ["Produto", "Custo", "Preco"]
-                faltando = [c for c in colunas_necessarias if c not in df.columns]
-                if faltando:
-                    st.error(f"❌ Colunas faltando: {', '.join(faltando)}. Use o modelo padrão para garantir compatibilidade.")
-                else:
-                    st.session_state.dados = pd.concat([st.session_state.dados, df], ignore_index=True)
-                    st.success(f"✅ {len(df)} produtos importados com sucesso!")
-            except Exception as e:
-                st.error(f"Erro ao ler arquivo: {e}")
+        ph1, ph2, ph3 = st.columns(3)
+        place_lucro = ph1.empty()
+        place_margem = ph2.empty()
+        place_prod = ph3.empty()
 
-        modelo_excel = gerar_modelo_excel()
-        st.download_button(
-            "📘 Baixar modelo Excel (.xlsx)",
-            data=modelo_excel,
-            file_name="Modelo_Lucra_Plus.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        # valores totais iniciais
+        lucro_total_total = pd.to_numeric(df_full[lucro_col], errors="coerce").sum(min_count=1)
+        margem_media_total = pd.to_numeric(df_full[margem_col], errors="coerce").mean()
+        total_produtos_total = len(df_full)
+
+        place_lucro.metric("💰 Lucro Total", f"R$ {0.0 if pd.isna(lucro_total_total) else lucro_total_total:.2f}")
+        place_margem.metric("📉 Margem Média", f"{0.0 if pd.isna(margem_media_total) else margem_media_total:.2f}%")
+        place_prod.metric("📦 Produtos", total_produtos_total)
+
+        st.markdown("---")
+        st.subheader("📈 Detalhamento por produto (clique para selecionar)")
+
+        # --- AgGrid Config
+        gb = GridOptionsBuilder.from_dataframe(df_full)
+        gb.configure_selection(selection_mode="multiple", use_checkbox=True)
+        gb.configure_pagination(enabled=True, paginationAutoPageSize=False, paginationPageSize=10)
+        gb.configure_default_column(resizable=True, sortable=True, filter=True, minWidth=160)
+        gridOptions = gb.build()
+
+        grid_response = AgGrid(
+            df_full,
+            gridOptions=gridOptions,
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            fit_columns_on_grid_load=True,
+            height=420,
+            theme="alpine",
         )
 
-    # ADIÇÃO MANUAL DE PRODUTOS
-    with col2:
-        st.subheader("📝 Adicionar Produto Manualmente")
-        with st.form("novo_produto", clear_on_submit=True):
-            nome = st.text_input("Produto")
-            custo = st.number_input("Custo (R$)", min_value=0.0, step=0.5)
-            preco = st.number_input("Preço (R$)", min_value=0.0, step=0.5)
-            taxa = st.number_input("Taxa (%)", min_value=0.0, step=0.5)
-            outros = st.number_input("Outros custos (R$)", min_value=0.0, step=0.5)
-            add = st.form_submit_button("Adicionar ➕")
+        selected_raw = grid_response.get("selected_rows", [])
+        if selected_raw is None:
+            selected_records = []
+        elif isinstance(selected_raw, pd.DataFrame):
+            selected_records = selected_raw.to_dict("records")
+        elif isinstance(selected_raw, dict):
+            selected_records = [selected_raw]
+        elif isinstance(selected_raw, list):
+            selected_records = selected_raw
+        else:
+            try:
+                selected_records = list(selected_raw)
+            except Exception:
+                selected_records = []
 
-            if add and nome:
-                novo = pd.DataFrame([{
-                    "Produto": nome,
-                    "Custo": custo,
-                    "Preco": preco,
-                    "Taxa_pct": taxa,
-                    "OutrosCustos": outros
-                }])
-                st.session_state.dados = pd.concat([st.session_state.dados, novo], ignore_index=True)
-                st.success(f"Produto '{nome}' adicionado.")
+        if len(selected_records) > 0:
+            df = pd.DataFrame(selected_records)
+            for c in df.columns:
+                if c != "Produto":
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            selecionados = df["Produto"].astype(str).tolist()
+            st.success(f"🔍 Filtro ativo: {', '.join(selecionados)}")
+        else:
+            df = df_full.copy()
 
-    if not st.session_state.dados.empty:
-        st.markdown("---")
-        st.subheader("📋 Produtos cadastrados")
-        st.dataframe(st.session_state.dados, use_container_width=True)
-
-    if st.button("🗑️ Limpar todos os produtos"):
-        st.session_state.dados = pd.DataFrame(columns=["Produto", "Custo", "Preco", "Taxa_pct", "OutrosCustos"])
-        st.warning("Todos os produtos foram apagados da sessão.")
-
-# ----------------------------
-# PÁGINA: RESULTADOS
-# ----------------------------
-elif menu == "📊 Resultados":
-    st.title("📊 Resultados e análises")
-    if st.session_state.dados.empty:
-        st.info("Nenhum produto cadastrado. Adicione ou importe primeiro.")
-    else:
-        df = calcular_resultados(st.session_state.dados, margem_desejada, custos_fixos)
-
-        lucro_total = df["Lucro_Líquido (R$)"].sum()
-        margem_media = df["Margem (%)"].mean()
-        produtos_negativos = (df["Lucro_Líquido (R$)"] < 0).sum()
+        # --- Atualiza big numbers com filtro
+        lucro_total = pd.to_numeric(df[lucro_col], errors="coerce").sum(min_count=1)
+        margem_media = pd.to_numeric(df[margem_col], errors="coerce").mean()
         total_produtos = len(df)
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("🧾 Produtos", total_produtos)
-        col2.metric("📉 Margem Média", f"{margem_media:.2f}%")
-        col3.metric("🚨 Lucro Negativo", produtos_negativos)
-        col4.metric("💰 Lucro Total", f"R$ {lucro_total:.2f}")
+        place_lucro.metric("💰 Lucro Total", f"R$ {0.0 if pd.isna(lucro_total) else lucro_total:.2f}")
+        place_margem.metric("📉 Margem Média", f"{0.0 if pd.isna(margem_media) else margem_media:.2f}%")
+        place_prod.metric("📦 Produtos", total_produtos)
 
         st.markdown("---")
-        st.subheader("📈 Detalhamento por produto")
-        st.dataframe(df, use_container_width=True)
+        st.markdown("### Gráfico de Margem por Produto")
 
-        st.markdown("### Gráfico: Margem por Produto")
         fig, ax = plt.subplots(figsize=(8, max(3, 0.25 * len(df))))
-        ax.barh(df["Produto"], df["Margem (%)"])
-        ax.set_xlabel("Margem (%)")
-        ax.set_ylabel("Produto")
+        ax.barh(df["Produto"], df[margem_col], color=["green" if x >= margem_desejada else "red" for x in df[margem_col]])
+        ax.set_xlabel(margem_col)
         ax.grid(axis="x", linestyle="--", alpha=0.5)
         st.pyplot(fig)
 
 # ----------------------------
-# PÁGINA: EXPORTAR
+# IMPORTAR / ADICIONAR
+# ----------------------------
+elif menu == "📥 Importar / Adicionar":
+    st.title("📥 Importar produtos ou adicionar manualmente")
+    col1, col2 = st.columns(2)
+    with col1:
+        arquivo = st.file_uploader("Selecione o arquivo Excel (.xlsx ou .xls)", type=["xlsx", "xls"])
+        if arquivo:
+            df = pd.read_excel(arquivo)
+            st.session_state.dados = pd.concat([st.session_state.get("dados", pd.DataFrame()), df], ignore_index=True)
+            st.success(f"{len(df)} produtos importados com sucesso!")
+        modelo_excel = gerar_modelo_excel()
+        st.download_button("📘 Baixar modelo Excel (.xlsx)", modelo_excel, "Modelo_Lucra_Plus.xlsx")
+    with col2:
+        st.subheader("📝 Adicionar Produto Manualmente")
+        with st.form("novo_produto", clear_on_submit=True):
+            nome = st.text_input("Produto")
+            custo = st.number_input("Custo (R$)", 0.0)
+            preco = st.number_input("Preço (R$)", 0.0)
+            taxa = st.number_input("Taxa (%)", 0.0)
+            outros = st.number_input("Outros custos (R$)", 0.0)
+            add = st.form_submit_button("Adicionar ➕")
+            if add and nome:
+                novo = pd.DataFrame([{"Produto": nome, "Custo": custo, "Preco": preco, "Taxa (%)": taxa, "Outros Custos (R$)": outros}])
+                st.session_state.dados = pd.concat([st.session_state.get("dados", pd.DataFrame()), novo], ignore_index=True)
+                st.success(f"Produto '{nome}' adicionado.")
+
+# ----------------------------
+# EXPORTAR
 # ----------------------------
 elif menu == "💾 Exportar":
     st.title("💾 Exportar resultados")
-    if st.session_state.dados.empty:
-        st.info("Nenhum produto disponível para exportação.")
+    if "dados" not in st.session_state or st.session_state.dados.empty:
+        st.info("Nenhum produto cadastrado.")
     else:
-        df = calcular_resultados(st.session_state.dados, margem_desejada, custos_fixos)
-        excel_data = exportar_excel(df)
-
-        st.success("✅ Resultados prontos para exportação.")
-        st.download_button(
-            "📊 Baixar Excel (.xlsx)",
-            data=excel_data,
-            file_name=f"Lucra_Resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        )
+        df_sem = calcular_resultados(st.session_state.dados, margem_desejada, custos_fixos, incluir_fixos=False)
+        df_com = calcular_resultados(st.session_state.dados, margem_desejada, custos_fixos, incluir_fixos=True)
+        excel = exportar_excel(df_sem, df_com)
+        st.success("✅ Arquivo Excel gerado com abas de comparação.")
+        st.download_button("📊 Baixar Excel (.xlsx)", excel, f"Lucra_Resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
 
 # ----------------------------
-# PÁGINA: SOBRE
+# SOBRE
 # ----------------------------
 elif menu == "ℹ️ Sobre":
     st.title("ℹ️ Sobre o Lucra+")
     st.markdown("""
-    **Lucra+** é um app criado para ajudar pequenos empreendedores e autônomos a **descobrir se estão realmente lucrando**.
-
-    ### 💡 Funcionalidades:
-    - Cálculo automático de margem, lucro e preço ideal  
-    - Inserção manual ou importação via planilha  
-    - Relatórios e gráficos intuitivos  
-    - Exportação de resultados  
-
-    ### 🚀 Próximos passos:
-    - Login e histórico de usuários  
-    - Planos Free / Pro com Stripe  
-    - Recomendação inteligente de precificação  
+    **Lucra+ v0.19**  
+    💡 Com filtro dinâmico e big numbers atualizando em tempo real acima da tabela.
     """)
-
-    st.caption("Versão 0.6 — by Daniel Siqueira, 2025")
