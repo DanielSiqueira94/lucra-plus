@@ -302,9 +302,46 @@ elif menu == "💾 Exportar":
 # SOBRE
 # ----------------------------
 elif menu == "ℹ️ Sobre":
-    st.title("ℹ️ Sobre o Lucra+")
-    st.markdown("""
-    **Lucra+ v0.19**  
-    💡 Com filtro dinâmico e big numbers atualizando em tempo real acima da tabela.
-    """)
+    st.title("💰 Sobre o Lucra+")
 
+    st.markdown("""
+    ### 💼 **Lucra+ v0.21**
+    O **Lucra+** é uma aplicação desenvolvida para ajudar **empreendedores e gestores** 
+    a entender e otimizar a **margem de lucro dos seus produtos**, com base em custos,
+    taxas e metas de rentabilidade.
+
+    ---
+    #### ⚙️ **Como o Lucra+ funciona**
+    1. Você importa ou cadastra seus produtos com preço, custo e taxas.  
+    2. O sistema calcula automaticamente:
+       - Lucro líquido (com e sem custos fixos)  
+       - Margem atual e ideal  
+       - Preço ideal para atingir a margem desejada  
+       - Ponto de equilíbrio  
+    3. Você visualiza os resultados em tabelas, gráficos e indicadores dinâmicos.
+
+    ---
+    #### 🚀 **Principais recursos**
+    - Upload de planilhas Excel (.xlsx / .xls)  
+    - Adição manual de produtos  
+    - Cálculos automáticos de lucro e margem  
+    - Filtro de produtos com atualização imediata  
+    - Exportação dos resultados para Excel  
+    - Gráfico visual de desempenho por produto  
+
+    ---
+    #### 🧩 **Tecnologias utilizadas**
+    - [Streamlit](https://streamlit.io) – Interface interativa e responsiva  
+    - [Pandas](https://pandas.pydata.org) – Processamento de dados  
+    - [Matplotlib](https://matplotlib.org) – Geração de gráficos  
+    - [OpenPyXL](https://openpyxl.readthedocs.io) – Criação e leitura de planilhas Excel  
+
+    ---
+    #### 💬 **Agradecimento**
+    Este projeto foi criado com o objetivo de **tornar o controle de margens simples e acessível**.  
+    Caso tenha sugestões de melhorias ou novas funcionalidades, fique à vontade para compartilhar!
+
+    ---
+    🏷️ **Versão:** 0.21  
+    📅 **Última atualização:** Novembro/2025  
+    """)
