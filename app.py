@@ -30,7 +30,9 @@ if not st.session_state.autenticado:
     senha = st.text_input("🔒 Digite a senha para acessar o app:", type="password")
     if senha == senha_correta:
         st.session_state.autenticado = True
-        st.experimental_rerun()  # recarrega a página e esconde o campo
+        st.rerun()  # recarrega a página e esconde o campo    
+        
+        
     elif senha:
         st.error("Senha incorreta. Tente novamente.")
     st.stop()
