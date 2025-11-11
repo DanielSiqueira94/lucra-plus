@@ -6,6 +6,13 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
+senha_correta = "lucra123"
+
+senha = st.text_input("Digite a senha para acessar o app:", type="password")
+
+if senha != senha_correta:
+    st.error("Acesso restrito. App temporariamente em manutenção.")
+    st.stop()
 # ----------------------------
 # CONFIGURAÇÃO DO APP
 # ----------------------------
@@ -232,3 +239,4 @@ elif menu == "ℹ️ Sobre":
     """)
 
     st.caption("Versão 0.6 — by Daniel Siqueira, 2025")
+
