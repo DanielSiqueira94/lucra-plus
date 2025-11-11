@@ -7,9 +7,9 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-# ----------------------------
+# -----------------------------
 # CONFIGURAÇÃO DO APP
-# ----------------------------
+# -----------------------------
 st.set_page_config(
     page_title="Lucra+ | Controle de Margem e Lucro",
     page_icon="💰",
@@ -299,5 +299,6 @@ elif menu == "ℹ️ Sobre":
     🏷️ **Versão:** 0.21  
     📅 **Última atualização:** Novembro/2025  
     """)
+
 
 
