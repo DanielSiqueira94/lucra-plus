@@ -18,20 +18,39 @@ st.set_page_config(
 )
 
 # ----------------------------
-# BLOQUEIO POR SENHA
+# NOVO LOGIN POR USUÁRIO
 # ----------------------------
-senha_correta = "lucra12345"
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
+usuarios = {
+    "daniel": {"senha": "senha123", "plano": "Premium"},
+    "mylena": {"senha": "senha456", "plano": "Free"}
+}
 
-if not st.session_state.autenticado:
-    senha = st.text_input("🔒 Digite a senha para acessar o app:", type="password")
-    if senha == senha_correta:
-        st.session_state.autenticado = True
-        st.rerun()
-    elif senha:
-        st.error("Senha incorreta. Tente novamente.")
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+if st.session_state.user is None:
+    st.title("🔐 Login")
+    usuario_input = st.text_input("Usuário:")
+    senha_input = st.text_input("Senha:", type="password")
+
+    if st.button("Entrar"):
+        if usuario_input in usuarios and senha_input == usuarios[usuario_input]["senha"]:
+            st.session_state.user = usuario_input
+            st.rerun()
+        else:
+            st.error("Usuário ou senha incorretos.")
     st.stop()
+
+# ----------------------------
+# MOSTRAR PLANO NA SIDEBAR + BOTÃO SAIR
+# ----------------------------
+plano_usuario = usuarios[st.session_state.user]["plano"]
+st.sidebar.info(f"👤 Usuário: **{st.session_state.user}**\n🏷️ Plano: **{plano_usuario}**")
+
+if st.sidebar.button("🚪 Sair"):
+    st.session_state.user = None
+    st.rerun()
+
 
 # ----------------------------
 # FUNÇÃO DE CÁLCULO
@@ -145,7 +164,14 @@ st.sidebar.title("⚙️ Configurações")
 margem_desejada = st.sidebar.number_input("Margem desejada (%)", 0.0, 99.0, 30.0)
 custos_fixos = st.sidebar.number_input("Custos fixos mensais (R$)", 0.0, 1_000_000.0, 0.0, step=100.0)
 incluir_fixos = st.sidebar.checkbox("Incluir custos fixos nos cálculos unitários", value=False)
-menu = st.sidebar.radio("📋 Navegação", ["📥 Importar / Adicionar", "📊 Resultados", "💾 Exportar", "ℹ️ Sobre"])
+
+# 👉 ADICIONAR OPÇÃO DE DASHBOARD APENAS PARA PREMIUM
+opcoes_menu = ["📥 Importar / Adicionar", "📊 Resultados", "💾 Exportar", "ℹ️ Sobre"]
+if plano_usuario == "Premium":
+    opcoes_menu.insert(2, "📉 Dashboards")  # adiciona antes do Exportar
+
+menu = st.sidebar.radio("📋 Navegação", opcoes_menu)
+
 
 # -----------------------------
 # RESULTADOS
@@ -161,16 +187,14 @@ if menu == "📊 Resultados":
         df_com = calcular_resultados(df_base, margem_desejada, custos_fixos, incluir_fixos=True)
         df_full = df_com if incluir_fixos else df_sem
 
-        # --- Big numbers
         lucro_col = "Lucro Líquido (com fixos) (R$)" if incluir_fixos and "Lucro Líquido (com fixos) (R$)" in df_full.columns else "Lucro Líquido (R$)"
-        margem_col = "Margem Líquida (%)" if incluir_fixos and "Margem Líquida (%)" in df_full.columns else "Margem Atual (%)"
+        margem_col = "Margem Líquida (%)" if incluir_fixos and "Margem Líquída (%)" in df_full.columns else "Margem Atual (%)"
 
         ph1, ph2, ph3 = st.columns(3)
         place_lucro = ph1.empty()
         place_margem = ph2.empty()
         place_prod = ph3.empty()
 
-        # valores totais iniciais
         lucro_total_total = pd.to_numeric(df_full[lucro_col], errors="coerce").sum(min_count=1)
         margem_media_total = pd.to_numeric(df_full[margem_col], errors="coerce").mean()
         total_produtos_total = len(df_full)
@@ -182,7 +206,6 @@ if menu == "📊 Resultados":
         st.markdown("---")
         st.subheader("📈 Detalhamento por produto (clique para selecionar)")
 
-        # --- AgGrid Config
         gb = GridOptionsBuilder.from_dataframe(df_full)
         gb.configure_selection(selection_mode="multiple", use_checkbox=True)
         gb.configure_pagination(enabled=True, paginationAutoPageSize=False, paginationPageSize=10)
@@ -224,7 +247,6 @@ if menu == "📊 Resultados":
         else:
             df = df_full.copy()
 
-        # --- Atualiza big numbers
         lucro_total = pd.to_numeric(df[lucro_col], errors="coerce").sum(min_count=1)
         margem_media = pd.to_numeric(df[margem_col], errors="coerce").mean()
         total_produtos = len(df)
@@ -254,10 +276,20 @@ elif menu == "📥 Importar / Adicionar":
     col1, col2 = st.columns(2)
     with col1:
         arquivo = st.file_uploader("Selecione o arquivo Excel (.xlsx ou .xls)", type=["xlsx", "xls"])
+
         if arquivo:
             df = pd.read_excel(arquivo)
-            st.session_state.dados = pd.concat([st.session_state.get("dados", pd.DataFrame()), df], ignore_index=True)
+            dados_atual = st.session_state.get("dados", pd.DataFrame())
+
+            # --- BLOQUEIO PARA USUÁRIOS FREE ---
+            total_novos = len(dados_atual) + len(df)
+            if plano_usuario == "Free" and total_novos > 3:
+                st.error("🚫 Usuários Free só podem ter **até 3 produtos cadastrados**.\n\nRemova alguns produtos ou faça upgrade para o Premium.")
+                st.stop()
+
+            st.session_state.dados = pd.concat([dados_atual, df], ignore_index=True)
             st.success(f"{len(df)} produtos importados com sucesso!")
+            
         modelo_excel = gerar_modelo_excel()
         st.download_button("📘 Baixar modelo Excel (.xlsx)", modelo_excel, "Modelo_Lucra_Plus.xlsx")
     with col2:
@@ -269,7 +301,16 @@ elif menu == "📥 Importar / Adicionar":
             taxa = st.number_input("Taxa (%)", 0.0)
             outros = st.number_input("Outros custos (R$)", 0.0)
             add = st.form_submit_button("Adicionar ➕")
+     
+                
             if add and nome:
+
+                # --- BLOQUEIO PARA USUÁRIOS FREE ---
+                dados_atual = st.session_state.get("dados", pd.DataFrame())
+                if plano_usuario == "Free" and len(dados_atual) >= 3:
+                    st.error("🚫 Usuários Free podem cadastrar no máximo **3 produtos**.\n\nFaça upgrade para o plano Premium para cadastrar ilimitado.")
+                    st.stop()
+
                 novo = pd.DataFrame([{
                     "Produto": nome,
                     "Custo": custo,
@@ -277,8 +318,9 @@ elif menu == "📥 Importar / Adicionar":
                     "Taxa (%)": taxa,
                     "Outros Custos (R$)": outros
                 }])
-                st.session_state.dados = pd.concat([st.session_state.get("dados", pd.DataFrame()), novo], ignore_index=True)
+                st.session_state.dados = pd.concat([dados_atual, novo], ignore_index=True)
                 st.success(f"Produto '{nome}' adicionado.")
+
 
 # ----------------------------
 # EXPORTAR
@@ -297,6 +339,76 @@ elif menu == "💾 Exportar":
             excel, 
             f"Lucra_Resultados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         )
+
+# ----------------------------
+# DASHBOARDS (APENAS PREMIUM)
+# ----------------------------
+elif menu == "📉 Dashboards":
+    if plano_usuario != "Premium":
+        st.error("🚫 Esta funcionalidade é exclusiva para usuários Premium.")
+        st.stop()
+
+    st.title("📉 Dashboards (Premium)")
+
+    if "dados" not in st.session_state or st.session_state.dados.empty:
+        st.info("Nenhum produto cadastrado.")
+        st.stop()
+
+    df_base = st.session_state.dados.copy()
+
+    # Calcula resultados
+    df_sem = calcular_resultados(df_base, margem_desejada, custos_fixos, incluir_fixos=False)
+    df_com = calcular_resultados(df_base, margem_desejada, custos_fixos, incluir_fixos=True)
+    df = df_com if incluir_fixos else df_sem
+
+    st.markdown("## 📌 Indicadores Simples")
+
+    lucro_col = "Lucro Líquido (R$)" if not incluir_fixos else "Lucro Líquido (com fixos) (R$)"
+    margem_col = "Margem Atual (%)" if not incluir_fixos else "Margem Líquida (%)"
+
+    total_produtos = len(df)
+    preco_medio = df["Preco"].mean()
+    custo_medio = df["Custo"].mean()
+    lucro_total = df[lucro_col].sum()
+    margem_media = df[margem_col].mean()
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🏷️ Preço Médio", f"R$ {preco_medio:.2f}")
+    col2.metric("💵 Custo Médio", f"R$ {custo_medio:.2f}")    
+    col3.metric("📉 Margem Média", f"{margem_media:.2f}%")
+
+
+    st.markdown("---")
+    st.markdown("## 📈 Gráficos")
+
+    # ===============================
+    # 1) TOP 5 PRODUTOS POR LUCRO
+    # ===============================
+    st.subheader("🏆 Top 5 Produtos por Lucro")
+
+    df_top5 = df.sort_values(lucro_col, ascending=False).head(5)
+
+    fig1, ax1 = plt.subplots(figsize=(8, 4))
+    ax1.barh(df_top5["Produto"], df_top5[lucro_col], color="#4CAF50")
+    ax1.invert_yaxis()
+    ax1.set_xlabel("Lucro (R$)")
+    ax1.grid(axis="x", linestyle="--", alpha=0.3)
+    st.pyplot(fig1)
+
+
+    # ===============================
+    # 2) MARGEM POR PRODUTO (TOP 10)
+    # ===============================
+    st.subheader("📊 Margem por Produto (Top 10)")
+
+    df_top_margem = df.sort_values(margem_col, ascending=False).head(10)
+
+    fig3, ax3 = plt.subplots(figsize=(8, 4))
+    ax3.barh(df_top_margem["Produto"], df_top_margem[margem_col], color="#2196F3")
+    ax3.invert_yaxis()
+    ax3.set_xlabel("Margem (%)")
+    ax3.grid(axis="x", linestyle="--", alpha=0.3)
+    st.pyplot(fig3)
 
 # ----------------------------
 # SOBRE
@@ -331,18 +443,16 @@ elif menu == "ℹ️ Sobre":
 
     ---
     #### 🧩 **Tecnologias utilizadas**
-    - [Streamlit](https://streamlit.io) – Interface interativa e responsiva  
-    - [Pandas](https://pandas.pydata.org) – Processamento de dados  
-    - [Matplotlib](https://matplotlib.org) – Geração de gráficos  
-    - [OpenPyXL](https://openpyxl.readthedocs.io) – Criação e leitura de planilhas Excel  
+    - Streamlit  
+    - Pandas  
+    - Matplotlib  
+    - OpenPyXL  
 
     ---
     #### 💬 **Agradecimento**
-    Este projeto foi criado com o objetivo de **tornar o controle de margens simples e acessível**.  
-    Caso tenha sugestões de melhorias ou novas funcionalidades, fique à vontade para compartilhar!
+    Este projeto foi criado com o objetivo de **tornar o controle de margens simples e acessível**.
 
     ---
     🏷️ **Versão:** 0.21  
     📅 **Última atualização:** Novembro/2025  
     """)
-
